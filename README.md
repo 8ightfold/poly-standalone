@@ -1,6 +1,6 @@
 # poly-standalone
 
-Standalone port of ``efl::Poly``.
+Standalone port of ``efl::Poly`` (yw nikki).
 
 Moving a ``Poly`` instance erases the original.
 
