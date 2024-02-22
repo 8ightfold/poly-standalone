@@ -52,7 +52,7 @@
 #endif
 
 #if defined(__clang__) && (__clang_major__ >= 13)
-# define TAIL_INLINE [[gnu::noinline]]
+# define TAIL_INLINE [[gnu::noinline, gnu::flatten]]
 # define TAIL_RETURN [[clang::musttail]] return
 #else
 # define TAIL_INLINE ALWAYS_INLINE
@@ -68,6 +68,12 @@
 # define POLY_FWD(...) static_cast< \
   decltype(__VA_ARGS__)&&>(__VA_ARGS__)
 #endif
+
+namespace efl {
+  template <typename Base,
+    std::derived_from<Base>...Derived>
+  struct Poly;
+} // namespace efl
 
 namespace efl::H {
   template <typename T, typename...TT>
@@ -131,17 +137,32 @@ namespace efl::H {
     alignas(BaseType_) RawType raw_;
     AbstractBase<Base> base_;
   };
+
+  template <typename>
+  struct IsPoly : std::false_type {};
+
+  template <typename Base, typename...Derived>
+  struct IsPoly<Poly<Base, Derived...>> : std::true_type {};
 } // namespace efl::H
 
 namespace efl::H {
+  template <typename T>
+  concept is_poly = IsPoly<T>::value;
+
+  template <typename T>
+  concept is_concrete = !std::is_abstract_v<T>;
+
+  template <typename T>
+  concept is_valid_poly = !is_poly<T> && is_concrete<T>;
+
   template <typename T, typename...UU>
   concept matches_any = (false || ... || std::same_as<T, UU>);
 
   template <typename T>
-  concept copyable = std::is_copy_constructible_v<T> && std::is_copy_assignable_v<T>;
+  concept copyable = is_valid_poly<T> && std::is_copy_constructible_v<T> && std::is_copy_assignable_v<T>;
 
   template <typename T>
-  concept movable = std::is_move_constructible_v<T> && std::is_move_assignable_v<T>;
+  concept movable = is_valid_poly<T> && std::is_move_constructible_v<T> && std::is_move_assignable_v<T>;
 
   template <typename...TT>
   concept all_copyable = (true && ... && copyable<TT>);
@@ -223,8 +244,7 @@ namespace efl {
       requires H::all_copyable<Derived...>
      : id_(p.id_) {
       p.visit([this] <typename T> (const T* P) {
-        if constexpr (!std::is_abstract_v<T>)
-          (void) new (this->data_.raw_) T{*P};
+        (void) new (this->data_.raw_) T{*P};
       });
     }
 
@@ -232,8 +252,7 @@ namespace efl {
       requires H::all_movable<Derived...>
      : id_(p.id_) {
       p.visit([this] <typename T> (T* P) {
-        if constexpr (!std::is_abstract_v<T>)
-          (void) new (this->data_.raw_) T{std::move(*P)};
+        (void) new (this->data_.raw_) T{std::move(*P)};
       });
       p.destroySelf();
     }
@@ -241,14 +260,14 @@ namespace efl {
     template <typename U>
     requires(H::matches_any<U, Base, Derived...> && H::copyable<U>)
     Poly(const U& u) : id_(ID<U>) {
-      static_assert(!std::is_abstract_v<U>);
+      static_assert(H::is_concrete<U>);
       (void) new (data_.raw_) U{u};
     }
 
     template <typename U>
     requires(H::matches_any<U, Base, Derived...> && H::movable<U>)
     Poly(U&& u) noexcept : id_(ID<U>) {
-      static_assert(!std::is_abstract_v<U>);
+      static_assert(H::is_concrete<U>);
       (void) new (data_.raw_) U{std::move(u)};
     }
 
@@ -277,8 +296,9 @@ namespace efl {
       return *this;
     }
 
-    template <H::copyable U>
-    requires H::matches_any<U, Base, Derived...>
+    template <typename U>
+    requires(H::matches_any<U, Base, Derived...> 
+      && H::copyable<U>)
     Poly& operator=(const U& u) {
       destroySelf();
       this->id_ = ID<U>;
@@ -286,8 +306,9 @@ namespace efl {
       return *this;
     }
 
-    template <H::movable U>
-    requires H::matches_any<U, Base, Derived...>
+    template <typename U>
+    requires(H::matches_any<U, Base, Derived...>
+      && H::movable<U>)
     Poly& operator=(U&& u) noexcept {
       destroySelf();
       this->id_ = ID<U>;
@@ -298,21 +319,21 @@ namespace efl {
     //=== Mutators ===//
 
     ALWAYS_INLINE void visit(auto&& F) {
-      if (this->isEmpty()) {
+      if (this->isEmpty())
         return;
-      } else {
-        TAIL_RETURN visit_<Base, Derived...>(
-          POLY_FWD(F));
-      }
+      if constexpr(H::is_concrete<Base>)
+        TAIL_RETURN visit_<Base, Derived...>(POLY_FWD(F));
+      else
+        TAIL_RETURN visit_<Derived...>(POLY_FWD(F));
     }
 
     ALWAYS_INLINE void visit(auto&& F) const {
-      if (this->isEmpty()) {
+      if (this->isEmpty())
         return;
-      } else {
-        TAIL_RETURN visit_<Base, Derived...>(
-          POLY_FWD(F));
-      }
+      if constexpr(H::is_concrete<Base>)
+        TAIL_RETURN visit_<Base, Derived...>(POLY_FWD(F));
+      else
+        TAIL_RETURN visit_<Derived...>(POLY_FWD(F));
     }
 
     constexpr Base* operator->() {
@@ -335,6 +356,12 @@ namespace efl {
     requires H::matches_any<T, Base, Derived...>
     constexpr bool holdsType() const noexcept {
       return this->id_ == ID<T>;
+    }
+
+    template <typename T>
+    requires(!H::matches_any<T, Base, Derived...>)
+    constexpr bool holdsType() const noexcept {
+      return false;
     }
 
     constexpr bool holdsAny() const noexcept {

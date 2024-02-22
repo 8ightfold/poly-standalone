@@ -1,4 +1,5 @@
 #include <Poly/Poly.hpp>
+#include <optional>
 #include <cstdio>
 
 struct MyBase {
@@ -35,4 +36,9 @@ int main() {
   MyPoly z = std::move(x);
   assert(z.holdsType<Woofer>() && x.isEmpty());
   z->saySomething();
+
+  std::optional<MyPoly> O;
+  assert(!O.has_value());
+  O = Meower();
+  (*O)->saySomething();
 }
