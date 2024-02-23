@@ -1,6 +1,7 @@
 #include <Poly/Poly.hpp>
 #include <optional>
 #include <cstdio>
+#include <expected>
 
 struct MyBase {
   virtual ~MyBase() {}
@@ -41,4 +42,16 @@ int main() {
   assert(!O.has_value());
   O = Meower();
   (*O)->saySomething();
+
+  x = O->take();
+  x->saySomething();
+  z.swap(x);
+  x->saySomething();
+
+  x = z.take();
+  assert(z.isEmpty());
+  assert(x.holdsType<Meower>());
+  z = Woofer();
+  std::swap(x, z);
+  assert(x.holdsType<Woofer>());
 }

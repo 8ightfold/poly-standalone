@@ -226,6 +226,15 @@ namespace efl::H {
   }
 } // namespace efl::H
 
+namespace std {
+  template <typename B, typename...DD>
+  void swap(efl::Poly<B, DD...>& L, efl::Poly<B, DD...>& R) {
+    efl::Poly<B, DD...> V = std::move(L);
+    L = std::move(R);
+    R = std::move(V);
+  }
+} // namespace std
+
 namespace efl {
   template <typename Base,
     std::derived_from<Base>...Derived>
@@ -276,7 +285,7 @@ namespace efl {
     template <typename = void>
     requires H::all_copyable<Derived...>
     Poly& operator=(const Poly& p) {
-      destroySelf();
+      this->destroySelf();
       this->id_ = p.id_;
       p.visit([this] <typename T> (const T* P) {
         (void) new (this->data_.raw_) T{*P};
@@ -287,7 +296,7 @@ namespace efl {
     template <typename = void>
     requires H::all_movable<Derived...>
     Poly& operator=(Poly&& p) noexcept {
-      destroySelf();
+      this->destroySelf();
       this->id_ = p.id_;
       p.visit([this] <typename T> (T* P) {
         (void) new (this->data_.raw_) T{std::move(*P)};
@@ -300,7 +309,7 @@ namespace efl {
     requires(H::matches_any<U, Base, Derived...> 
       && H::copyable<U>)
     Poly& operator=(const U& u) {
-      destroySelf();
+      this->destroySelf();
       this->id_ = ID<U>;
       (void) new (data_.raw_) U{u};
       return *this;
@@ -310,7 +319,7 @@ namespace efl {
     requires(H::matches_any<U, Base, Derived...>
       && H::movable<U>)
     Poly& operator=(U&& u) noexcept {
-      destroySelf();
+      this->destroySelf();
       this->id_ = ID<U>;
       (void) new (data_.raw_) U{std::move(u)};
       return *this;
@@ -348,6 +357,14 @@ namespace efl {
 
     void erase() noexcept {
       destroySelf();
+    }
+
+    Poly&& take() noexcept {
+      return std::move(*this);
+    }
+
+    void swap(Poly& R) {
+      std::swap(*this, R);
     }
 
     //=== Observers ===//
